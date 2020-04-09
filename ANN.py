@@ -34,7 +34,7 @@ from keras.layers import LeakyReLU
 
 
 from utilities import *
-import model_order_reduction
+#import model_order_reduction
 
 
 class Architecture:
@@ -49,6 +49,7 @@ class Architecture:
         self._dropout = 0
         self._patience = 10
         self._batchNormalization = False
+        self._alpha = 0.0001
 
         self.save_txt = True
 
@@ -59,7 +60,7 @@ class Architecture:
     @activation.setter
     def activation(self, new_activation):
         if new_activation == 'leaky_relu':
-            LR = LeakyReLU(alpha=0.0001)
+            LR = LeakyReLU(alpha=self._alpha)
             LR.__name__= 'relu'
             self._activation= LR
         else:
@@ -136,6 +137,14 @@ class Architecture:
     def getNeurons(self, new_vector):
         self._getNeurons = new_vector
 
+    @property
+    def alpha_leaky(self):
+        return self._alpha
+
+    @alpha_leaky.setter
+    def alpha_leaky(self, new_value):
+        self._alpha = new_value
+
 
     @staticmethod
     def set_environment():
@@ -187,7 +196,7 @@ class classifier(Architecture):
         '''
         self.__activation_output = 'softmax'
         self.__path = os.getcwd()
-        self.__monitor_early_stop= 'val_loss'
+        self.__monitor_early_stop= 'loss'
         self.__optimizer= 'adam'
         self.__loss_classification= 'categorical_crossentropy'
         self.__metrics_classification= 'accuracy'
@@ -240,7 +249,7 @@ class classifier(Architecture):
         classifier.summary()
 
         earlyStopping = EarlyStopping(monitor=self.__monitor_early_stop, patience=self._patience, verbose=1, mode='min')
-        mcp_save = ModelCheckpoint(filepath=self.__path + '/best_weights.h5', verbose=1, save_best_only=True, monitor=self.__monitor_early_stop, mode='min')
+        mcp_save = ModelCheckpoint(filepath=self.__path + '/best_weights.h5', verbose=1, save_best_only=True, monitor='val_loss', mode='min')
 
         classifier.compile(optimizer =self.__optimizer,loss=self.__loss_classification, metrics =[self.__metrics_classification])
         history = classifier.fit(X_train, y_train, validation_data=(X_test, y_test), batch_size=self._batch_size, epochs=self._n_epochs, callbacks=[earlyStopping, mcp_save])
@@ -269,7 +278,7 @@ class classifier(Architecture):
 
         if self.save_txt:
 
-            while counter_saver < self._layers:
+            while counter_saver <= self._layers:
                 layer_weights = classifier.layers[counter_saver].get_weights()[0]
                 layer_biases = classifier.layers[counter_saver].get_weights()[1]
                 name_weights = "Weights_HL{}.txt".format(counter_saver)
@@ -288,18 +297,18 @@ class regressor(Architecture):
     def __init__(self, X, Y):
         self.X = X
         self.Y = Y
+        self._activation_output = 'linear'
 
         super().__init__(self.X, self.Y)
 
-        self._activation_output = 'linear'
 
     @property
     def activationOutput(self):
-        return self._activationOutput
+        return self._activation_output
 
     @activationOutput.setter
     def activationOutput(self, new_string):
-        self._activationOutput = new_string
+        self._activation_output = new_string
 
 
     def __set_hard_parameters(self):
@@ -339,7 +348,7 @@ class regressor(Architecture):
             print("Dropping out some neurons...")
         if self._batchNormalization:
             print("Normalization added!")
-            self.model.add(BatchNormalization())
+            self.model.add(BatchNormalization(momentum=0.9, epsilon=1e-5))
         while counter < self._layers:
             self.model.add(Dense(self._getNeurons[counter], activation=self._activation))
             counter +=1
