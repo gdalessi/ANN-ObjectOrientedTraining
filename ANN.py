@@ -38,7 +38,7 @@ from utilities import *
 
 
 class Architecture:
-    def __init__(self, X, Y):
+    def __init__(self, X, Y, *dictionary):
         self.X = X
         self.Y = Y
 
@@ -52,6 +52,25 @@ class Architecture:
         self._alpha = 0.0001
 
         self.save_txt = True
+
+        if dictionary:
+            settings = dictionary[0]
+
+            self._center = settings["center"]
+            self._centering = settings["centering_method"]
+            self._scale = settings["scale"]
+            self._scaling = settings["scaling_method"]
+            self._activation = settings["activation_function"]
+            self._batch_size = settings["batch_size"]
+            self._n_epochs = settings["number_of_epochs"]
+            self._getNeurons = settings["neurons_per_layer"]
+            self._dropout = settings["dropout"]
+            self._patience = settings["patience"]
+
+            if settings["activation_function"] == 'leaky_relu':
+                LR = LeakyReLU(alpha=self._alpha)
+                LR.__name__= 'relu'
+                self._activation= LR
 
     @property
     def activation(self):
@@ -165,7 +184,6 @@ class Architecture:
         except FileExistsError:
             pass
 
-
     @staticmethod
     def write_recap_text(neuro_number, number_batches, activation_specification):
         '''
@@ -176,16 +194,50 @@ class Architecture:
         text_file = open("recap_training.txt", "wt")
         neurons_number = text_file.write("The number of neurons in the implemented architecture is equal to: {} \n".format(neuro_number))
         batches_number = text_file.write("The batch size is equal to: {} \n".format(number_batches))
-        activation_used = text_file.write("The activation function which was used was: "+ activation_specification + ". \n")
+        activation_used = text_file.write("The activation function which was used was: "+ str(activation_specification) + ". \n")
         text_file.close()
 
 
+    @staticmethod
+    def preprocess_training(X, centering_decision, scaling_decision, centering_method, scaling_method):
 
+        if centering_decision and scaling_decision:
+            mu, X_ = center(X, centering_method, True)
+            sigma, X_tilde = scale(X_, scaling_method, True)
+        elif centering_decision and not scaling_decision:
+            mu, X_tilde = center(X, centering_method, True)
+        elif scaling_decision and not centering_decision:
+            sigma, X_tilde = scale(X, scaling_method, True)
+        else:
+            X_tilde = X
+
+        return X_tilde
+
+   
 class classifier(Architecture):
-    def __init__(self, X, Y):
+    def __init__(self, X, Y, *dictionary):
         self.X = X
         self.Y = Y
-        super().__init__(self.X, self.Y)
+        super().__init__(self.X, self.Y, *dictionary)
+
+        if dictionary:
+            settings = dictionary[0]
+
+            self._center = settings["center"]
+            self._centering = settings["centering_method"]
+            self._scale = settings["scale"]
+            self._scaling = settings["scaling_method"]
+            self._activation = settings["activation_function"]
+            self._batch_size = settings["batch_size"]
+            self._n_epochs = settings["number_of_epochs"]
+            self._getNeurons = settings["neurons_per_layer"]
+            self._dropout = settings["dropout"]
+            self._patience = settings["patience"]
+
+            if settings["activation_function"] == 'leaky_relu':
+                LR = LeakyReLU(alpha=self._alpha)
+                LR.__name__= 'relu'
+                self._activation= LR
 
 
     def __set_hard_parameters(self):
@@ -224,8 +276,11 @@ class classifier(Architecture):
 
         Architecture.set_environment()
         Architecture.write_recap_text(self._getNeurons, self._batch_size, self._activation)
+       
+        print("Preprocessing training matrix..")
+        self.X_tilde = self.preprocess_training(self.X, self._center, self._scale, self._centering, self._scaling)
 
-        X_train, X_test, y_train, y_test = train_test_split(self.X, self.Y, test_size=0.3)
+        X_train, X_test, y_train, y_test = train_test_split(self.X_tilde, self.Y, test_size=0.3)
         input_dimension = self.X.shape[1]
         number_of_classes = self.Y.shape[1]
         self.__set_hard_parameters()
@@ -288,18 +343,38 @@ class classifier(Architecture):
 
                 counter_saver +=1
 
-        test = classifier.predict(self.X)
+        test = classifier.predict(self.X_tilde)
 
         return test
 
 
 class regressor(Architecture):
-    def __init__(self, X, Y):
+    def __init__(self, X, Y, *dictionary):
         self.X = X
         self.Y = Y
-        self._activation_output = 'linear'
 
-        super().__init__(self.X, self.Y)
+        super().__init__(self.X, self.Y, *dictionary)
+
+        if dictionary:
+            settings = dictionary[0]
+
+            self._center = settings["center"]
+            self._centering = settings["centering_method"]
+            self._scale = settings["scale"]
+            self._scaling = settings["scaling_method"]
+            self._activation = settings["activation_function"]
+            self._batch_size = settings["batch_size"]
+            self._n_epochs = settings["number_of_epochs"]
+            self._getNeurons = settings["neurons_per_layer"]
+            self._dropout = settings["dropout"]
+            self._patience = settings["patience"]
+
+            if settings["activation_function"] == 'leaky_relu':
+                LR = LeakyReLU(alpha=self._alpha)
+                LR.__name__= 'relu'
+                self._activation= LR
+
+        self._activation_output = 'linear'
 
 
     @property
@@ -332,7 +407,9 @@ class regressor(Architecture):
         Architecture.write_recap_text(self._getNeurons, self._batch_size, self._activation)
         self.__set_hard_parameters()
 
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.Y, test_size=0.3)
+        print("Preprocessing training matrix..")
+        self.X_tilde = self.preprocess_training(self.X, self._center, self._scale, self._centering, self._scaling)
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X_tilde, self.Y, test_size=0.3)
 
         self._layers = len(self._getNeurons)
 
@@ -373,7 +450,7 @@ class regressor(Architecture):
 
         counter_saver = 0
 
-        test = self.model.predict(self.X)
+        test = self.model.predict(self.X_tilde)
 
         if self.save_txt:
 
@@ -397,6 +474,9 @@ class regressor(Architecture):
 
 
 class Autoencoder:
+    '''
+    X in input must be already SCALED
+    '''
     def __init__(self, X):
         self.X = X
 
@@ -578,47 +658,27 @@ def main():
     }
 
     training_options = {
+        "center"                    : True,
+        "centering_method"          : "MEAN",
+        "scale"                     : True, 
+        "scaling_method"            : "AUTO",
         "batch_size"                : 64,
         "activation_function"       : "leaky_relu",
         "number_of_epochs"          : 200,
+        "neurons_per_layer"         : [10,10],
+        "dropout"                   : 0,
+        "patience"                  : 10,
     }
 
-    settings = {
-        "centering_method"          : "MEAN",
-        "scaling_method"            : "AUTO",
-    }
-
+  
     X = readCSV(file_options["path_to_file"], file_options["input_file_name"])
     Y = readCSV(file_options["path_to_file"], file_options["output_file_name"])
-
-    
-    modelReduction = model_order_reduction.PCA(X)
-    modelReduction.eigens = 2
-
-    X_cleaned_lev, bin, new_mask = modelReduction.outlier_removal_leverage()
-    Y_cleaned1 = np.delete(Y, new_mask, axis=0)
-
-    modelReduction = model_order_reduction.PCA(X_cleaned_lev)
-    modelReduction.eigens = 2
-    print("The training matrix dimensions with leverage outliers are: {}x{}".format(X.shape[0], X.shape[1]))
-    print("The training matrix dimensions without leverage outliers are: {}x{}".format(X_cleaned_lev.shape[0], X_cleaned_lev.shape[1]))
-    
-
-    X_cleaned_ortho, bin, new_mask2 = modelReduction.outlier_removal_orthogonal()
-    Y_cleaned2 = np.delete(Y_cleaned1, new_mask2, axis=0)
-
-    print("The training matrix dimensions with orthogonal outliers are: {}x{}".format(X_cleaned_lev.shape[0], X_cleaned_lev.shape[1]))
-    print("The training matrix dimensions without orthogonal outliers are: {}x{}".format(X_cleaned_ortho.shape[0], X_cleaned_ortho.shape[1]))
-    
-    X_tilde = center_scale(X_cleaned_ortho, center(X_cleaned_ortho, method=settings["centering_method"]), scale(X_cleaned_ortho, method=settings["scaling_method"]))
-
-
 
 
     ### REGRESSION ###                                                          --> RUNNING, OK -- TO TEST
 
-    model = regressor(X_tilde,Y_cleaned2)
-
+    model = regressor(X,Y, training_options)
+    '''
     model.activation_function = training_options["activation_function"]
     model.n_epochs = training_options["number_of_epochs"]
     model.batch_size = training_options["batch_size"]
@@ -627,7 +687,7 @@ def main():
     model.activationOutput = 'softmax'
     model.getNeurons = [256, 512]
     model.patience = 5
-
+    '''
     yo = model.fit_network()
     predictedTest, trueTest = model.predict()
 
