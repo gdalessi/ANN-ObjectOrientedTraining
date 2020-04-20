@@ -9,12 +9,6 @@ MODULE: ANN.py
 @Contacts:
     giuseppe.dalessio@ulb.ac.be
 
-@Details:
-    This module contains a set of functions/classes which are based on ANN. The following architectures are implemented:
-    1) ANN for classification tasks.
-    2) Autoencoder for non-linear dimensionality reduction.
-    3) ANN for regression tasks.
-
 @Additional notes:
     This code is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
     Please report any bug to: giuseppe.dalessio@ulb.ac.be
@@ -34,7 +28,7 @@ from keras.layers import LeakyReLU
 
 
 from utilities import *
-#import model_order_reduction
+
 
 
 class Architecture:
@@ -66,6 +60,8 @@ class Architecture:
             self._getNeurons = settings["neurons_per_layer"]
             self._dropout = settings["dropout"]
             self._patience = settings["patience"]
+            self._batchNormalization = settings["batchNormalization"]
+            self._alpha = settings["alpha_LR"]
 
             if settings["activation_function"] == 'leaky_relu':
                 LR = LeakyReLU(alpha=self._alpha)
@@ -352,6 +348,7 @@ class regressor(Architecture):
     def __init__(self, X, Y, *dictionary):
         self.X = X
         self.Y = Y
+        self._activation_output = 'linear'
 
         super().__init__(self.X, self.Y, *dictionary)
 
@@ -368,13 +365,15 @@ class regressor(Architecture):
             self._getNeurons = settings["neurons_per_layer"]
             self._dropout = settings["dropout"]
             self._patience = settings["patience"]
+            self._alpha = settings["alpha_LR"]
+            self._activation_output = settings["activation_output"]
 
             if settings["activation_function"] == 'leaky_relu':
                 LR = LeakyReLU(alpha=self._alpha)
                 LR.__name__= 'relu'
                 self._activation= LR
 
-        self._activation_output = 'linear'
+        
 
 
     @property
@@ -659,15 +658,21 @@ def main():
 
     training_options = {
         "center"                    : True,
-        "centering_method"          : "MEAN",
-        "scale"                     : True, 
-        "scaling_method"            : "AUTO",
+        "centering_method"          : "mean",
+        "scale"                     : True,
+        "scaling_method"            : "auto",
+
+        "neurons_per_layer"         : [256, 512],
         "batch_size"                : 64,
+        "number_of_epochs"          : 1000,
+
         "activation_function"       : "leaky_relu",
-        "number_of_epochs"          : 200,
-        "neurons_per_layer"         : [10,10],
+        "alpha_LR"                  : 0.0001,
+        "activation_output"         : "softmax",
+
+        "batchNormalization"        : True,
         "dropout"                   : 0,
-        "patience"                  : 10,
+        "patience"                  :10, 
     }
 
   
@@ -675,19 +680,8 @@ def main():
     Y = readCSV(file_options["path_to_file"], file_options["output_file_name"])
 
 
-    ### REGRESSION ###                                                          --> RUNNING, OK -- TO TEST
-
     model = regressor(X,Y, training_options)
-    '''
-    model.activation_function = training_options["activation_function"]
-    model.n_epochs = training_options["number_of_epochs"]
-    model.batch_size = training_options["batch_size"]
-    model.dropout = 0
-    model.batchNormalization = True
-    model.activationOutput = 'softmax'
-    model.getNeurons = [256, 512]
-    model.patience = 5
-    '''
+
     yo = model.fit_network()
     predictedTest, trueTest = model.predict()
 
@@ -703,6 +697,39 @@ def main():
     plt.show()
 
 
+if __name__ == '__main__':
+    main()
+
+    ### REGRESSION ###                                                          --> RUNNING, OK -- TO TEST
+
+    #model = regressor(X,Y, training_options)
+    '''
+    model.activation_function = training_options["activation_function"]
+    model.n_epochs = training_options["number_of_epochs"]
+    model.batch_size = training_options["batch_size"]
+    model.dropout = 0
+    model.batchNormalization = True
+    model.activationOutput = 'softmax'
+    model.getNeurons = [256, 512]
+    model.patience = 5
+    '''
+    
+    '''
+    yo = model.fit_network()
+    predictedTest, trueTest = model.predict()
+
+
+    a = plt.axes(aspect='equal')
+    plt.scatter(trueTest.flatten(), predictedTest.flatten())
+    plt.xlabel('Y_zc')
+    plt.ylabel('Y_pred')
+    lims = [np.min(trueTest), np.max(trueTest)]
+    plt.xlim(lims)
+    plt.ylim(lims)
+    _ = plt.plot(lims, lims, 'r')
+    plt.show()
+
+    '''
 
     ### CLASSIFICATION ###                                                      --> RUNNING, OK -- TO TEST
     '''
@@ -720,8 +747,6 @@ def main():
     index = model.fit_network()
     '''
 
-
-
     ### DIMENSIONALITY REDUCTION ###                                            --> RUNNING, OK -- TO TEST
     '''
     model = Autoencoder(X)
@@ -733,8 +758,6 @@ def main():
 
     model.fit()
     '''
-
-
 
 
 
