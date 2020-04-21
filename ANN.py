@@ -25,6 +25,7 @@ import os.path
 from keras.callbacks import EarlyStopping
 from keras.callbacks import ModelCheckpoint
 from keras.layers import LeakyReLU
+from tensorflow.python.keras.optimizers import Adam
 
 
 from utilities import *
@@ -349,6 +350,9 @@ class regressor(Architecture):
         self.X = X
         self.Y = Y
         self._activation_output = 'linear'
+        self._loss_function = 'mean_squared_error'
+        self._monitor_early_stop = 'mean_squared_error'
+        self._learningRate = 0.0001
 
         super().__init__(self.X, self.Y, *dictionary)
 
@@ -367,6 +371,9 @@ class regressor(Architecture):
             self._patience = settings["patience"]
             self._alpha = settings["alpha_LR"]
             self._activation_output = settings["activation_output"]
+            self._loss_function = settings["loss_function"]
+            self._monitor_early_stop = settings["monitor"]
+            self._learningRate = settings["learning_rate"]
 
             if settings["activation_function"] == 'leaky_relu':
                 LR = LeakyReLU(alpha=self._alpha)
@@ -384,6 +391,34 @@ class regressor(Architecture):
     def activationOutput(self, new_string):
         self._activation_output = new_string
 
+    
+    @property
+    def loss_function(self):
+        return self._loss_function
+
+    @loss_function.setter
+    def loss_function(self, new_value):
+        self._loss_function = new_value
+
+
+    @property
+    def monitor_early_stop(self):
+        return self._monitor_early_stop
+
+    @monitor_early_stop.setter
+    def monitor_early_stop(self, new_value):
+        self._monitor_early_stop = new_value
+
+
+    @property
+    def learningRate(self):
+        return self._learningRate
+
+    @learningRate.setter
+    def learningRate(self, new_value):
+        self._learningRate = new_value
+
+
 
     def __set_hard_parameters(self):
         '''
@@ -392,10 +427,9 @@ class regressor(Architecture):
         be changed during the tuning.
         '''
         self.__path = os.getcwd()
-        self.__monitor_early_stop= 'mean_squared_error'
-        self.__optimizer= 'adam'
-        self.__loss_function= 'mean_squared_error'
+        self.__optimizer = Adam(lr= self._learningRate)
         self.__metrics= 'mse'
+
 
 
     def fit_network(self):
@@ -427,13 +461,17 @@ class regressor(Architecture):
             self.model.add(BatchNormalization(momentum=0.9, epsilon=1e-5))
         while counter < self._layers:
             self.model.add(Dense(self._getNeurons[counter], activation=self._activation))
-            counter +=1
+            if self._dropout != 0:
+                self.model.add(Dropout(self._dropout))
+            if self._batchNormalization:
+                self.model.add(BatchNormalization(momentum=0.9, epsilon=1e-5))
+                counter +=1
         self.model.add(Dense(output_dimension, activation=self._activation_output))
         self.model.summary()
 
-        earlyStopping = EarlyStopping(monitor=self.__monitor_early_stop, patience=self._patience, verbose=0, mode='min')
-        mcp_save = ModelCheckpoint(filepath=self.__path+ '/best_weights2c.h5', verbose=1, save_best_only=True, monitor=self.__monitor_early_stop, mode='min')
-        self.model.compile(loss=self.__loss_function, optimizer=self.__optimizer, metrics=[self.__metrics])
+        earlyStopping = EarlyStopping(monitor=self._monitor_early_stop, patience=self._patience, verbose=0, mode='min')
+        mcp_save = ModelCheckpoint(filepath=self.__path+ '/best_weights2c.h5', verbose=1, save_best_only=True, monitor=self._monitor_early_stop, mode='min')
+        self.model.compile(loss=self._loss_function, optimizer=self.__optimizer, metrics=[self.__metrics])
         history = self.model.fit(self.X_train, self.y_train, batch_size=self._batch_size, epochs=self._n_epochs, verbose=1, validation_data=(self.X_test, self.y_test), callbacks=[earlyStopping, mcp_save])
 
         plt.plot(history.history['loss'])
@@ -673,6 +711,9 @@ def main():
         "batchNormalization"        : True,
         "dropout"                   : 0,
         "patience"                  :10, 
+        "loss_function"             : "binary_crossentropy",
+        "monitor"                   : "val_loss",
+        "learning_rate"             : 0.0001,
     }
 
   
