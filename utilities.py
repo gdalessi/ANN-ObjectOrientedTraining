@@ -25,7 +25,7 @@ import time
 
 import matplotlib
 import matplotlib.pyplot as plt
-__all__ = ["unscale", "uncenter", "center", "scale", "center_scale", "PHC_index", "get_centroids", "get_cluster", "get_all_clusters", "explained_variance", "evaluate_clustering_DB", "NRMSE", "PCA_fit", "accepts", "readCSV", "allowed_centering","allowed_scaling", "PHC_robustTrim", "PHC_median"]
+__all__ = ["unscale", "uncenter", "center", "scale", "center_scale", "PCA_fit", "accepts", "readCSV", "allowed_centering","allowed_scaling", "outlier_removal_leverage", "outlier_removal_orthogonal"]
 
 
 # ------------------------------
@@ -89,149 +89,153 @@ def center_scale(X, mu, sig):
         raise Exception("The matrix to be centered & scaled and the centering/scaling vectors must have the same dimensionality.")
 
 
-def explained_variance(X, n_eigs, plot=False):
+def outlier_removal_leverage(X, eigens, centering, scaling):
     '''
-    Assess the variance explained by the first 'n_eigs' retained
-    Principal Components. This is important to know if the percentage
-    of explained variance is enough, or additional PCs must be retained.
-    Usually, it is considered accepted a percentage of explained variable
-    above 95%.
-    - Input:
-    X = CENTERED/SCALED data matrix -- dim: (observations x variables)
-    n_eigs = number of components to retain -- dim: (scalar)
-    plot = choose if you want to plot the cumulative variance --dim: (boolean), false is default
-    - Output:
-    explained: percentage of explained variance -- dim: (scalar)
+    This function removes the multivariate outliers (leverage) eventually contained
+    in the training dataset, via PCA. In fact, examining the data projection
+    on the PCA manifold (i.e., the scores), and measuring the score distance
+    from the manifold center, it is possible to identify the so-called
+    leverage points. They are characterized by very high distance from the
+    center of mass, once detected they can easily be removed.
+    Additional info on outlier identification and removal can be found here:
+
+    Jolliffe pag 237 --- formula (10.1.2):
+
+    dist^{2}_{2,i} = sum_{k=p-q+1}^{p}(z^{2}_{ik}/l_{k})
+    where:
+    p = number of variables
+    q = number of required PCs
+    i = index to count the observations
+    k = index to count the PCs
+
     '''
-    PCs, eigens = PCA_fit(X, n_eigs)
-    explained_variance = np.cumsum(eigens)/sum(eigens)
-    explained = explained_variance[n_eigs]
+    #center and scale the input matrix before PCA
+    mu_X = center(X, centering)
+    sigma_X = scale(X, scaling)
 
-    if plot:
-        matplotlib.rcParams.update({'font.size' : 18, 'text.usetex' : True})
-        fig = plt.figure()
-        axes = fig.add_axes([0.15,0.15,0.7,0.7], frameon=True)
-        axes.plot(np.linspace(1, X.shape[1]+1, X.shape[1]), explained_variance, color='b', marker='s', linestyle='-', linewidth=2, markersize=4, markerfacecolor='b', label='Cumulative explained')
-        axes.plot([n_eigs, n_eigs], [explained_variance[0], explained_variance[n_eigs]], color='r', marker='s', linestyle='-', linewidth=2, markersize=4, markerfacecolor='r', label='Explained by {} PCs'.format(n_eigs))
-        axes.set_xlabel('Number of PCs [-]')
-        axes.set_ylabel('Explained variance [-]')
-        axes.set_title('Variance explained by {} PCs: {}'.format(n_eigs, round(explained,3)))
-        axes.legend()
-    plt.show()
+    X_tilde = center_scale(X, mu_X, sigma_X)
 
-    return explained
-
-
-def evaluate_clustering_DB(X, idx):
-    """
-    Davies-Bouldin index a coefficient to evaluate the goodness of a
-    clustering solution. The more it approaches to zero, the better
-    the clustering solution is. -- Tested OK with comparison Matlab
-    """
-    from scipy.spatial.distance import euclidean, cdist
-    #Initialize matrix and other quantitites
-    k = int(np.max(idx) +1)
-    centroids_list = [None] *k
-    S_i = [None] *k
-    M_ij = np.zeros((k,k), dtype=float)
+    #Leverage points removal:
+    #Compute the PCA scores. Override the eventual number of PCs: ALL the
+    #PCs are needed, as the outliers are given by the last PCs examination
+    all_eig = X.shape[1]-1
+    PCs, eigval = PCA_fit(X_tilde, all_eig)
+    scores = X_tilde @ PCs
     TOL = 1E-16
 
-    #For each cluster, compute the mean distance between the points and their centroids
-    for ii in range(0,k):
-        cluster_ = get_cluster(X, idx, ii)
-        centroids_list[ii] = get_centroids(cluster_)
-        S_i[ii] = np.mean(cdist(cluster_, centroids_list[ii].reshape((1,-1))))  #reshape centroids_list[ii] from (n,) to (1,n)
 
-    #Compute the distance between once centroid and all the others:
-    for ii in range(0,k):
-        for jj in range(0,k):
-            if ii != jj:
-                M_ij[ii,jj] = euclidean(centroids_list[ii], centroids_list[jj])
-            else:
-                M_ij[ii,jj] = 1
+    scores_dist = np.empty((X.shape[0],), dtype=float)
+    #For each observation, compute the distance from the center of the manifold
+    for ii in range(0,X.shape[0]):
+        t_sq = 0
+        lam_j = 0
+        for jj in range(eigens, scores.shape[1]):
+            t_sq += scores[ii,jj]**2
+            lam_j += eigval[jj]
+        scores_dist[ii] = t_sq/(lam_j + TOL)
 
-    R_ij = np.empty((k,k),dtype=float)
+    #Now compute the distance distribution, and delete the observations in the
+    #upper 3% (done in the while loop) to get the outlier-free matrix.
 
-    #Compute the R_ij coefficient for each couple of clusters, using the
-    #two coefficients S_ij and M_ij
-    for ii in range(0,k):
-        for jj in range(0,k):
-            if ii != jj:
-                R_ij[ii,jj] = (S_i[ii] + S_i[jj])/M_ij[ii,jj] +TOL
-            else:
-                R_ij[ii,jj] = 0
+    #Divide the distance vector in 100 bins
+    n_bins = 100
+    min_interval = np.min(scores_dist)
+    max_interval = np.max(scores_dist)
 
-    D_i = [None] *k
+    delta_step = (max_interval - min_interval) / n_bins
 
-    #Compute the Davies-Bouldin index as the mean of the maximum R_ij value
-    for ii in range(0,k):
-        D_i[ii] = np.max(R_ij[ii], axis=0)
+    counter = 0
+    bin = np.empty((len(scores_dist),))
+    var_left = min_interval
 
-    DB = np.mean(D_i)
+    #Find the observations in each bin (find the idx, where the classes are
+    #the different bins number)
+    while counter <= n_bins:
+        var_right = var_left + delta_step
+        mask = np.logical_and(scores_dist >= var_left, scores_dist < var_right)
+        bin[np.where(mask)] = counter
+        counter += 1
+        var_left += delta_step
 
-    return DB
+    unique,counts=np.unique(bin,return_counts=True)
+    cumulativeDensity = 0
+    new_counter = 0
+
+    while cumulativeDensity < 0.98:
+        cumulative_ = counts[new_counter]/X.shape[0]
+        cumulativeDensity += cumulative_
+        new_counter += 1
+
+    new_mask = np.where(bin > new_counter)
+    X = np.delete(X, new_mask, axis=0)
+
+    return X , bin, new_mask
 
 
-def get_centroids(X):
+
+def outlier_removal_orthogonal(X, eigens, centering, scaling):
     '''
-    Given a matrix (or a cluster), calculate its
-    centroid.
-    - Input:
-    X = data matrix -- dim: (observations x variables)
-    - Output:
-    centroid = centroid vector -- dim: (1 x variables)
+    This function removes the multivariate outliers (orthogonal out) eventually contained
+    in the training dataset, via PCA. In fact, examining the reconstruction error
+    it is possible to identify the so-called orthogonal outliers. They are characterized
+    by very high distance from the manifold (large rec error), once detected they can easily
+    be removed.
+    Additional info on outlier identification and removal can be found here:
+
+    Hubert, Mia, Peter Rousseeuw, and Tim Verdonck. Computational Statistics & Data Analysis 53.6 (2009): 2264-2274.
+
     '''
-    centroid = np.mean(X, axis = 0)
-    return centroid
+    #center and scale the input matrix before PCA
+    mu_X = center(X, centering)
+    sigma_X = scale(X, scaling)
 
+    X_tilde = center_scale(X, mu_X, sigma_X)
 
-def get_cluster(X, idx, index, write=False):
-    '''
-    Given an index, group all the observations
-    of the matrix X given their membership vector idx.
-    - Input:
-    X = data matrix -- dim: (observations x variables)
-    idx = class membership vector -- dim: (obs x 1)
-    index = index of the requested group -- dim (scalar)
-    - Output:
-    cluster: matrix with the grouped observations -- dim: (p x var)
-    '''
-    positions = np.where(idx == index)
-    cluster = X[positions]
+    #Orthogonal outliers removal:
+    PCs, eigval = PCA_fit(X_tilde, eigens)
 
-    if write:
-        np.savetxt("Observations in cluster number{}.txt".format(index), cluster)
+    epsilon_rec = X_tilde - X_tilde @ PCs @ PCs.T
+    sq_rec_oss = np.power(epsilon_rec, 2)
 
-    return cluster
+    #Now compute the distance distribution, and delete the observations in the
+    #upper 3% (done in the while loop) to get the outlier-free matrix.
 
+    #Divide the distance vector in 100 bins
+    n_bins = 100
+    min_interval = np.min(sq_rec_oss)
+    max_interval = np.max(sq_rec_oss)
 
-def get_all_clusters(X, idx):
-    '''
-    Group all the observations of the matrix X given their membership vector idx,
-    and collect the different groups into a list.
-    - Input:
-    X = data matrix -- dim: (observations x variables)
-    idx = class membership vector -- dim: (obs x 1)
-    - Output:
-    clusters: list with the clusters from 0 to k -- dim: (k)
-    '''
-    k = max(idx) +1
-    clusters = [None] *k
+    delta_step = (max_interval - min_interval) / n_bins
 
-    for ii in range (0,k):
-        clusters[ii] = get_cluster(X, idx, ii)
+    counter = 0
+    bin_id = np.empty((len(epsilon_rec),))
+    var_left = min_interval
 
-    return clusters
+    #Find the observations in each bin (find the idx, where the classes are
+    #the different bins number)
+    while counter <= n_bins:
+        var_right = var_left + delta_step
+        mask = np.logical_and(sq_rec_oss >= var_left, sq_rec_oss < var_right)
+        bin_id[np.where(mask)[0]] = counter
+        counter += 1
+        var_left += delta_step
 
+    #Compute the classes (unique) and the number of elements per class (counts)
+    unique,counts=np.unique(bin_id,return_counts=True)
+    #Declare the variables to build the CDF to select the observations belonging to the
+    #98% of the total
+    cumulativeDensity = 0
+    new_counter = 0
 
-def NRMSE (X_true, X_pred):
-    n_obs, n_var = X_true.shape
-    NRMSE = [None] *n_var
+    while cumulativeDensity < 0.98:
+        cumulative_ = counts[new_counter]/X.shape[0]
+        cumulativeDensity += cumulative_
+        new_counter += 1
 
-    for ii in range(0, n_var):
-        NRMSE[ii] = np.sqrt(np.mean((X_true[:,ii] - X_pred[:,ii])**2)) / np.sqrt(np.mean(X_true[:,ii]**2))
+    new_mask = np.where(bin_id > new_counter)
+    X = np.delete(X, new_mask, axis=0)
 
-    return NRMSE
+    return X, bin_id, new_mask
 
 
 def PCA_fit(X, n_eig):
@@ -265,127 +269,6 @@ def PCA_fit(X, n_eig):
 
     else:
         raise Exception("The number of PCs exceeds the number of variables in the data-set.")
-
-
-def PHC_index(X, idx):
-    '''
-    Computes the PHC (Physical Homogeneity of the Cluster) index.
-    For many applications, more than a pure mathematical tool to assess the quality of the clustering solution,
-    such as the Silhouette Coefficient, a measure of the variables variation is more suitable. This coefficient
-    assess the quality of the clustering solution measuring the variables variation in each cluster. The more the PHC
-    approaches to zero, the better the clustering.
-    - Input:
-    X = UNCENTERED/UNSCALED data matrix -- dim: (observations x variables)
-    idx = class membership vector -- dim: (obs x 1)
-    - Output:
-    PHC_coeff = vector with the PHC scores for each cluster -- dim: (number_of_cluster)
-    '''
-
-    k = max(idx) +1
-    TOL = 1E-16
-    PHC_coeff=[None] *k
-    PHC_deviations=[None] *k
-
-    for ii in range (0,k):
-        cluster_ = get_cluster(X, idx, ii)
-
-        maxima = np.max(cluster_, axis = 0)
-        minima = np.min(cluster_, axis = 0)
-        media = np.mean(cluster_, axis=0)
-
-        dev = np.std(cluster_, axis=0)
-
-        PHC_coeff[ii] = np.mean((maxima-minima)/(media +TOL))
-        PHC_deviations[ii] = np.mean(dev)
-
-    return PHC_coeff, PHC_deviations
-
-
-def PHC_median(X, idx):
-    '''
-    Computes the PHC (Physical Homogeneity of the Cluster) index.
-    For many applications, more than a pure mathematical tool to assess the quality of the clustering solution,
-    such as the Silhouette Coefficient, a measure of the variables variation is more suitable. This coefficient
-    assess the quality of the clustering solution measuring the variables variation in each cluster. The more the PHC
-    approaches to zero, the better the clustering.
-    - Input:
-    X = UNCENTERED/UNSCALED data matrix -- dim: (observations x variables)
-    idx = class membership vector -- dim: (obs x 1)
-    - Output:
-    PHC_coeff = vector with the PHC scores for each cluster -- dim: (number_of_cluster)
-    '''
-
-    k = max(idx) +1
-    TOL = 1E-16
-    PHC_coeff=[None] *k
-    PHC_deviations=[None] *k
-
-    for ii in range (0,k):
-        cluster_ = get_cluster(X, idx, ii)
-
-        maxima = np.max(cluster_, axis = 0)
-        minima = np.min(cluster_, axis = 0)
-        media = np.mean(cluster_, axis=0)
-
-        dev = np.std(cluster_, axis=0)
-
-        PHC_coeff[ii] = np.mean((maxima-minima)/(media +TOL))
-        PHC_deviations[ii] = np.median(dev)
-
-    return PHC_coeff, PHC_deviations
-
-
-def PHC_robustTrim(X,idx):
-
-    import model_order_reduction
-
-    k = np.max(idx) +1
-    TOL = 1E-16
-    PHC_coeff=[None] *k
-    PHC_deviations=[None] *k
-
-    for ii in range(0,k):
-        cluster_ = get_cluster(X, idx, ii)
-
-        model = model_order_reduction.PCA(cluster_)
-        model.centering = 'mean'
-        model.scaling = 'auto'
-        model.eigens = cluster_.shape[1] -1
-        PCs, eigval = model.fit()
-        scores = model.get_scores()
-        mahalanobis_ = np.empty((cluster_.shape[0],),dtype=float)
-
-        for jj in range(0,cluster_.shape[0]):
-            t_sq = 0
-            lam_j = 0
-            for jj in range(0, cluster_.shape[1]-1):
-                t_sq += scores[ii,jj]**2
-                lam_j += eigval[jj]
-            mahalanobis_[ii] = t_sq/(lam_j + TOL)
-            
-        #A fraction alpha (typically 0.01%-0.1%) of the data points characterized by the largest 
-        #value of DM are classified as outliers and removed.
-        
-        alpha = 0.000007
-        
-        
-        #compute the new number of observations after the trim factor:
-        trim = int((1-alpha)*cluster_.shape[0])
-        to_trim = np.argsort(mahalanobis_)
-    
-        new_mask = to_trim[:trim]
-        cluster_ = cluster_[new_mask,:]
-
-        maxima = np.max(cluster_, axis = 0)
-        minima = np.min(cluster_, axis = 0)
-        media = np.mean(cluster_, axis=0)
-
-        dev = np.std(cluster_, axis=0)
-
-        PHC_coeff[ii] = np.mean((maxima-minima)/(media +TOL))
-        PHC_deviations[ii] = np.mean(dev)
-
-    return PHC_coeff, PHC_deviations
 
 
 def readCSV(path, name):

@@ -380,9 +380,11 @@ class regressor(Architecture):
                 LR.__name__= 'relu'
                 self._activation= LR
 
+        if len(dictionary) > 1:
+            self.Z = dictionary[1]
+            self.testProcess = True
+
         
-
-
     @property
     def activationOutput(self):
         return self._activation_output
@@ -444,6 +446,14 @@ class regressor(Architecture):
         self.X_tilde = self.preprocess_training(self.X, self._center, self._scale, self._centering, self._scaling)
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X_tilde, self.Y, test_size=0.3)
 
+        if self.testProcess:
+            #if there is a new matrix for the test (Z), the latter has to be centered and scaleed 
+            #with the training matrix preprocessing factors:
+            mu = center(self.X, self._centering, return_centered_matrix= False)
+            sigma = scale(self.X, self._scaling, return_scaled_matrix = False)
+
+            self.Z_tilde = center_scale(self.Z, mu, sigma)
+        
         self._layers = len(self._getNeurons)
 
         counter = 0
@@ -503,11 +513,23 @@ class regressor(Architecture):
 
         return test
 
+
     def predict(self):
 
         prediction_test = self.model.predict(self.X_test)
 
         return prediction_test, self.y_test
+
+
+    def predict_new_matrix(self):
+        if self.testProcess:
+            prediction_new = self.model.predict(self.Z_tilde)
+
+            return prediction_new
+        else:
+            raise Exception("Test input matrix not given. Cannot predict: exiting without error..")
+            pass
+
 
 
 class Autoencoder:
