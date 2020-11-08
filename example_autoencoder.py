@@ -6,6 +6,8 @@ import datetime
 import sourceCode.ANN as neural
 from sourceCode.utilities import *
 
+########## SETTINGS ##########
+
 file_options = {
     "path_to_file"                  : "/Users/giuseppedalessio/Dropbox/workPython/plasma_reduction/data", 
     "input_4_file_name"             : "input_case4.csv",
@@ -29,6 +31,7 @@ model.patience = 5                          # Patience for early stopping
 
 encoded, X_recovered = model.fit()          # Output: encoded = low-dimensional projection; X_recovered = reconstructed input matrix via AE (scaled space)
 
+########## END OF SETTINGS ##########
 
 #recover the reconstructed matrix in the original space
 X_back = unscale(X_recovered, sigma)
