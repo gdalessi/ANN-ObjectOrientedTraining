@@ -25,7 +25,7 @@ import time
 
 import matplotlib
 import matplotlib.pyplot as plt
-__all__ = ["unscale", "uncenter", "center", "scale", "center_scale", "PCA_fit", "accepts", "readCSV", "allowed_centering","allowed_scaling", "outlier_removal_leverage", "outlier_removal_orthogonal"]
+__all__ = ["unscale", "uncenter", "center", "scale", "center_scale", "PCA_fit", "accepts", "readCSV", "allowed_centering","allowed_scaling", "outlier_removal_leverage", "outlier_removal_orthogonal", "split_for_validation"]
 
 
 # ------------------------------
@@ -81,6 +81,14 @@ def center_scale(X, mu, sig):
     VAST: the ratio between the variance and the mean of each variable is used as a scaling f.
     '''
     TOL = 1E-16
+    try:
+        X.shape[1]
+        print("SHAAAAPE: {}".format(X.shape[1]))
+    except:
+        X = np.reshape(X, (len(X),1))
+        mu = np.reshape(mu, (X.shape[1],1))
+        sig = np.reshape(sig, (X.shape[1],1))
+
     if X.shape[1] == mu.shape[0] and X.shape[1] == sig.shape[0]:
         X0 = X - mu
         X0 = X0 / (sig + TOL)
