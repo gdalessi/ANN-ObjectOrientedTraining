@@ -482,7 +482,7 @@ class regressor(Architecture):
         plt.legend(['Train', 'Test'], loc='upper right')
         plt.savefig('loss_history.eps')
         #plt.show()
-        plt.clf()
+        #plt.clf()
         plt.close()
 
         self.model.load_weights(self.__path + '/best_weights2c.h5')
@@ -494,7 +494,7 @@ class regressor(Architecture):
 
         if self.save_txt:
 
-            while counter_saver < self._layers:
+            while counter_saver <= self._layers:
                 layer_weights = self.model.layers[counter_saver].get_weights()[0]
                 layer_biases = self.model.layers[counter_saver].get_weights()[1]
                 name_weights = "Weights_HL{}.txt".format(counter_saver)
@@ -795,8 +795,8 @@ class Autoencoder:
         self.__metrics= 'mse'
 
 
-    @staticmethod
-    def set_environment():
+
+    def set_environment(self):
         '''
         This function creates a new folder where all the produced files
         will be saved.
@@ -806,13 +806,15 @@ class Autoencoder:
         import os
 
         now = datetime.datetime.now()
-        newDirName = "Train Autoencoder - " + now.strftime("%Y_%m_%d-%H%M")
+        newDirName = "trainAE_" + "Neurons=" + str(self._n_neurons) + "_BatchSize=" + str(self._batch_size) + "_Activation=" + self._activation 
 
         try:
             os.mkdir(newDirName)
             os.chdir(newDirName)
         except FileExistsError:
-            pass
+            newDirName = "trainAE_" + "Neurons=" + str(self._n_neurons) + "_BatchSize=" + str(self._batch_size) + "_Activation=" + self._activation + "_Date=" + now.strftime("%Y_%m_%d-%H%M")
+            os.mkdir(newDirName)
+            os.chdir(newDirName)
 
 
     @staticmethod
@@ -825,15 +827,15 @@ class Autoencoder:
         text_file = open("recap_training.txt", "wt")
         neurons_number = text_file.write("The number of neurons in the implemented architecture is equal to: {} \n".format(neuro_number))
         batches_number = text_file.write("The batch size is equal to: {} \n".format(number_batches))
-        #activation_used = text_file.write("The activation function which was used was: "+ activation_specification + ". \n")
+        activation_used = text_file.write("The activation function which was used was: "+ activation_specification + ". \n")
         text_file.close()
 
 
     def fit(self):
-        from keras.layers import Input, Dense
-        from keras.models import Model
+        from tensorflow.python.keras.layers import Input, Dense
+        from tensorflow.python.keras.models import Model
 
-        Autoencoder.set_environment()
+        self.set_environment()
         Autoencoder.write_recap_text(self._n_neurons, self._batch_size, self._activation)
 
         input_dimension = self.X.shape[1]
@@ -865,7 +867,8 @@ class Autoencoder:
         plt.xlabel('Epoch')
         plt.legend(['Train', 'Test'], loc='upper right')
         plt.savefig('loss_history.eps')
-        plt.show()
+        #plt.show()
+        plt.close()
 
         encoded_X = encoder.predict(self.X)
 
@@ -873,11 +876,23 @@ class Autoencoder:
             first_layer_weights = encoder.get_weights()[0]
             first_layer_biases  = encoder.get_weights()[1]
 
-            np.savetxt(self.__path + 'AEweightsHL1.txt', first_layer_weights)
-            np.savetxt(self.__path + 'AEbiasHL1.txt', first_layer_biases)
+            np.savetxt('AEweightsHL1.txt', first_layer_weights)
+            np.savetxt('AEbiasHL1.txt', first_layer_biases)
 
-            np.savetxt(self.__path + 'Encoded_matrix.txt', encoded_X)
-
+            
         reconstruction = decoder.predict(encoded_X)
+        np.save('Encoded_matrix', encoded_X)
+        np.save('Reconstructed_matrix', reconstruction)
+        
+        autoencoder.save("model_autoencoder.h5")
+        encoder.save("model_encoder.h5")
+        decoder.save("model_decoder.h5")
+
+        '''
+        from tensorflow.python.keras.models import load_model
+        model_autoencoder = load_model('autoencoder.h5')
+        model_encoder = load_model('encoder.h5')
+        model_decoder = load_model('decoder.h5')
+        '''
 
         return encoded_X, reconstruction

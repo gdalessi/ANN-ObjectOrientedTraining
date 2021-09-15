@@ -18,10 +18,10 @@ import sourceCode.ANN as neural
 from sourceCode.utilities import *
 
 file_options = {
-    "path_to_file"                  : "/Users/giuseppedalessio/Dropbox/workPython/plasma_reduction/data", 
+    "path_to_file"                  : "../OpenMORe/data/reactive_flow/", 
 
     #Input shape: matrix X (n x p), accounting for n statistical observations of p variables
-    "input"                         : "input_case4.csv",
+    "input"                         : "turbo2D.csv",
 
 }
 
