@@ -14,13 +14,13 @@ MODULE: ANN.py
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
-from tensorflow.python.keras.models import Sequential
+from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, BatchNormalization, Dropout
 import os
 import os.path
-from tensorflow.python.keras.callbacks import EarlyStopping
-from tensorflow.python.keras.callbacks import ModelCheckpoint
-from tensorflow.python.keras.layers import LeakyReLU
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.callbacks import ModelCheckpoint
+from tensorflow.keras.layers import LeakyReLU
 from tensorflow.keras.optimizers import Adam
 
 from .utilities import *
